@@ -45,11 +45,11 @@ spec:
             - python3
             - -m
             - evals.odex.build_prompt_dataset
-            - --dataset-path
-            - /tmp/odex_dataset.jsonl
-            - --output-path
+            - --dataset
+            - neulab/odex
+            - --output
             - /tmp/prompted_dataset.jsonl
-            - --s3-upload-uri
+            - --s3-output
             - s3://odex/prompts/prompted_dataset.jsonl
           env:
             - name: AWS_ACCESS_KEY_ID

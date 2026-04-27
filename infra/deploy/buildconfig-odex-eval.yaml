@@ -1,0 +1,48 @@
+---
+# ImageStream to hold the built ODEX evaluation image
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: odex-eval
+  labels:
+    app: odex-eval
+---
+# BuildConfig for building the ODEX evaluation image
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: odex-eval
+  labels:
+    app: odex-eval
+spec:
+  # Build from Git source
+  source:
+    type: Git
+    git:
+      uri: https://github.com/ilya-kolchinsky/code-agent.git
+      ref: odex-benchmark
+    contextDir: .
+
+  # Use Docker strategy with our Containerfile
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: infra/images/Containerfile.odex-eval
+
+  # Output to ImageStream
+  output:
+    to:
+      kind: ImageStreamTag
+      name: odex-eval:latest
+
+  # Resource limits for the build pod
+  resources:
+    limits:
+      cpu: "4"
+      memory: "8Gi"
+    requests:
+      cpu: "2"
+      memory: "4Gi"
+
+  # Trigger builds manually (no automatic triggers)
+  triggers: []
