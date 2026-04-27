@@ -1,0 +1,139 @@
+---
+# K8s Job to build the ODEX evaluation container image using Buildah.
+#
+# Builds from the Containerfile.odex-eval and pushes to the internal
+# OpenShift registry (or external registry if IMAGE_REGISTRY is changed).
+#
+# Prerequisites:
+#   - Git repository accessible (public GitHub or provide credentials)
+#   - Internal registry accessible or external registry credentials
+#
+# For OpenShift internal registry:
+#   oc apply -f infra/images/job-build-odex-image.yaml
+#
+# For external registry, create a secret first:
+#   oc create secret docker-registry registry-credentials \
+#     --docker-server=quay.io \
+#     --docker-username=<username> \
+#     --docker-password=<password>
+#
+#   Then update the Job to reference the secret.
+#
+# Monitor:
+#   oc logs -f job/build-odex-image
+#
+# Cleanup:
+#   oc delete job build-odex-image
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: build-odex-image
+spec:
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 3600
+  template:
+    spec:
+      restartPolicy: Never
+      serviceAccountName: image-builder
+      containers:
+        - name: buildah
+          # Using a Buildah image that can run rootless
+          image: quay.io/buildah/stable:latest
+          securityContext:
+            # Buildah needs some privileges for container builds
+            runAsUser: 1000
+            capabilities:
+              add:
+                - SETUID
+                - SETGID
+          command:
+            - /bin/bash
+            - -c
+            - |
+              set -euo pipefail
+
+              # Configuration
+              GIT_REPO="${GIT_REPO:-https://github.com/redhat-et/code-agent.git}"
+              GIT_BRANCH="${GIT_BRANCH:-main}"
+              IMAGE_REGISTRY="${IMAGE_REGISTRY:-image-registry.openshift-image-registry.svc:5000}"
+              IMAGE_NAMESPACE="${IMAGE_NAMESPACE:-$(cat /var/run/secrets/kubernetes.io/serviceaccount/namespace)}"
+              IMAGE_NAME="${IMAGE_NAME:-odex-eval}"
+              IMAGE_TAG="${IMAGE_TAG:-latest}"
+              FULL_IMAGE="${IMAGE_REGISTRY}/${IMAGE_NAMESPACE}/${IMAGE_NAME}:${IMAGE_TAG}"
+
+              echo "Building ODEX evaluation image..."
+              echo "  Repository: ${GIT_REPO}"
+              echo "  Branch: ${GIT_BRANCH}"
+              echo "  Image: ${FULL_IMAGE}"
+
+              # Clone repository
+              echo "Cloning repository..."
+              git clone --depth 1 --branch "${GIT_BRANCH}" "${GIT_REPO}" /workspace/code-agent
+              cd /workspace/code-agent
+
+              # Build image using Buildah
+              echo "Building container image..."
+              buildah bud \
+                --storage-driver=vfs \
+                -f infra/images/Containerfile.odex-eval \
+                -t "${FULL_IMAGE}" \
+                .
+
+              # Push to registry
+              echo "Pushing image to registry..."
+              buildah push \
+                --storage-driver=vfs \
+                --tls-verify=false \
+                "${FULL_IMAGE}"
+
+              echo "✓ Image built and pushed successfully: ${FULL_IMAGE}"
+          env:
+            # Override these via ConfigMap or directly in the Job spec
+            - name: GIT_REPO
+              value: "https://github.com/ilya-kolchinsky/code-agent.git"
+            - name: GIT_BRANCH
+              value: "odex-benchmark"
+            - name: IMAGE_REGISTRY
+              value: "image-registry.openshift-image-registry.svc:5000"
+            - name: IMAGE_NAME
+              value: "odex-eval"
+            - name: IMAGE_TAG
+              value: "latest"
+          resources:
+            requests:
+              cpu: "2"
+              memory: "4Gi"
+            limits:
+              cpu: "4"
+              memory: "8Gi"
+          volumeMounts:
+            - name: workspace
+              mountPath: /workspace
+            - name: containers-storage
+              mountPath: /var/lib/containers
+      volumes:
+        - name: workspace
+          emptyDir:
+            sizeLimit: 10Gi
+        - name: containers-storage
+          emptyDir:
+            sizeLimit: 20Gi
+---
+# ServiceAccount for building images
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: image-builder
+---
+# RoleBinding to allow image-builder SA to push to internal registry
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: image-builder-push
+subjects:
+  - kind: ServiceAccount
+    name: image-builder
+roleRef:
+  kind: ClusterRole
+  name: system:image-builder
+  apiGroup: rbac.authorization.k8s.io

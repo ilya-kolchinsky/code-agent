@@ -1,0 +1,89 @@
+---
+# One-time Job to build the ODEX prompted dataset.
+#
+# Loads ODEX dataset from HuggingFace/local path, constructs prompts,
+# and uploads the result to S3/MinIO. Only needs to run once per
+# dataset configuration.
+#
+# Prerequisites:
+#   - MinIO deployed: oc apply -f infra/deploy/minio.yaml
+#   - odex bucket created in MinIO
+#   - ODEX dataset available (HuggingFace or local JSONL)
+#
+# Usage:
+#   oc apply -f evals/odex/deploy/job-build-prompts.yaml
+#
+# Monitor:
+#   oc logs -f job/build-odex-prompts
+#
+# Cleanup:
+#   oc delete job build-odex-prompts
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: build-odex-prompts
+spec:
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 3600
+  template:
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: build-prompts
+          # Use the ODEX-specific image built via infra/images/job-build-odex-image.yaml
+          # For OpenShift internal registry: image-registry.openshift-image-registry.svc:5000/<namespace>/odex-eval:latest
+          # Update this to match your registry and namespace
+          image: image-registry.openshift-image-registry.svc:5000/code-agent/odex-eval:latest
+          imagePullPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          command:
+            - python3
+            - -m
+            - evals.odex.build_prompt_dataset
+            - --dataset-path
+            - /tmp/odex_dataset.jsonl
+            - --output-path
+            - /tmp/prompted_dataset.jsonl
+            - --s3-upload-uri
+            - s3://odex/prompts/prompted_dataset.jsonl
+          env:
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: minio-credentials
+                  key: MINIO_ROOT_USER
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: minio-credentials
+                  key: MINIO_ROOT_PASSWORD
+            - name: S3_ENDPOINT_URL
+              valueFrom:
+                secretKeyRef:
+                  name: minio-credentials
+                  key: MINIO_ENDPOINT_URL
+            - name: HOME
+              value: /tmp
+            - name: HF_HOME
+              value: /tmp/.cache/huggingface
+            - name: XDG_CACHE_HOME
+              value: /tmp/.cache
+          resources:
+            requests:
+              cpu: "2"
+              memory: "4Gi"
+            limits:
+              cpu: "2"
+              memory: "4Gi"
+          volumeMounts:
+            - name: workspace
+              mountPath: /tmp
+      volumes:
+        - name: workspace
+          emptyDir:
+            sizeLimit: 10Gi

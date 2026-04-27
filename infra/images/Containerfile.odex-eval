@@ -1,0 +1,39 @@
+# Ray worker image for ODEX evaluation orchestration.
+#
+# This image runs the Ray head and workers that:
+#   - Phase 0: Build prompts from ODEX dataset
+#   - Phase 1 workers: Call vLLM to generate code solutions
+#   - Phase 2 workers: Create K8s Jobs for test execution, collect results
+#
+# Actual code execution happens in standard Python container images
+# (python:3.11-slim) running as native K8s Jobs.
+#
+# Build on cluster:
+#   oc apply -f infra/images/job-build-odex-image.yaml
+#
+# Build locally:
+#   podman build -f infra/images/Containerfile.odex-eval \
+#       -t <registry>/odex-eval:latest .
+#   podman push <registry>/odex-eval:latest
+
+FROM quay.io/modh/ray:2.53.0-py312-cu128
+
+USER 0
+
+# Install dependencies for ODEX evaluation
+RUN pip install --no-cache-dir \
+    "kubernetes>=28.0.0" \
+    "openai>=1.0.0" \
+    "datasets" \
+    "boto3"
+
+# Install the code-agent evals package
+COPY pyproject.toml /app/pyproject.toml
+COPY evals/ /app/evals/
+RUN pip install --no-cache-dir /app
+
+USER 1001
+
+ENV HOME=/tmp
+ENV HF_HOME=/tmp/.cache/huggingface
+ENV XDG_CACHE_HOME=/tmp/.cache
