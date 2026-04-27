@@ -13,39 +13,45 @@ logger = logging.getLogger(__name__)
 def build_odex_prompt(instance: dict, include_tests: bool = False) -> str:
     """Build a prompt for ODEX code generation.
 
+    ODEX is a code completion task - complete the function stub.
+
     Args:
-        instance: ODEX dataset instance with 'intent' and optionally 'test_list'.
+        instance: ODEX dataset instance with 'prompt', 'intent', and 'test'.
         include_tests: Whether to include test cases in the prompt.
 
     Returns:
         Formatted prompt string.
     """
+    # ODEX uses a completion format with a function stub
+    function_stub = instance.get("prompt", "")
     intent = instance.get("intent", "")
 
     prompt_parts = [
-        "Generate a Python function that solves the following problem:",
+        "Complete the following Python function to solve this task:",
         "",
-        intent,
+        f"Task: {intent}",
         "",
-        "Provide your solution as a complete Python function.",
+        "```python",
+        f"{function_stub}",
+        "```",
+        "",
+        "Complete the function definition above by adding the return statement.",
+        "Provide the COMPLETE function (including the def line) in your response.",
     ]
 
-    if include_tests and "test_list" in instance:
-        test_list = instance["test_list"]
-        if test_list:
+    if include_tests:
+        test_assertions = instance.get("test", [])
+        if test_assertions:
             prompt_parts.extend([
                 "",
-                "Test cases:",
+                "The function will be tested with these assertions:",
             ])
-            for test in test_list[:3]:  # Show first 3 test cases
-                inputs = test.get("inputs", {})
-                output = test.get("output")
-                prompt_parts.append(f"  Input: {inputs}")
-                prompt_parts.append(f"  Expected Output: {output}")
+            for assertion in test_assertions[:3]:  # Show first 3 tests
+                prompt_parts.append(f"  {assertion.strip()}")
 
     prompt_parts.extend([
         "",
-        "Wrap your solution in ```python and ``` markers.",
+        "Wrap your complete solution in ```python and ``` markers.",
     ])
 
     return "\n".join(prompt_parts)
