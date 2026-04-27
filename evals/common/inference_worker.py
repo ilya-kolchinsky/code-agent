@@ -50,8 +50,13 @@ class InferenceWorker:
         if not vllm_urls:
             raise ValueError("vllm_urls must contain at least one endpoint")
 
+        # Ensure each URL ends with /v1 for OpenAI-compatible endpoint
         self.clients = [
-            openai.OpenAI(base_url=url, api_key="not-needed", timeout=timeout)
+            openai.OpenAI(
+                base_url=url if url.endswith("/v1") else f"{url}/v1",
+                api_key="not-needed",
+                timeout=timeout
+            )
             for url in vllm_urls
         ]
         self._call_count = 0
