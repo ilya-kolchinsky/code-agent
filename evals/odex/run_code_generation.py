@@ -84,8 +84,8 @@ def distribute_tasks(
     # Create Ray workers
     workers = [
         CodeWorker.remote(
-            vllm_endpoints=vllm_endpoints,
-            model_name_or_path=model_name_or_path,
+            vllm_urls=vllm_endpoints,
+            model_name=model_name_or_path,
             timeout=timeout,
         )
         for _ in range(num_workers)
