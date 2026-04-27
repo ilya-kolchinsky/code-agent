@@ -24,28 +24,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def load_dataset(dataset_path: Path) -> list[dict]:
-    """Load ODEX dataset instances from JSONL.
-
-    Args:
-        dataset_path: Path to the ODEX dataset file.
-
-    Returns:
-        List of ODEX dataset instances.
-    """
-    instances = []
-    with open(dataset_path) as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            instance = json.loads(line)
-            instances.append(instance)
-
-    logger.info(f"Loaded {len(instances)} instances from {dataset_path}")
-    return instances
-
-
 def load_existing_solutions(output_path: Path) -> set[str]:
     """Find task IDs that already have solutions on disk (resumability)."""
     completed = set()
@@ -153,12 +131,6 @@ def main():
         description="Phase 1: Generate ODEX code solutions using Ray + vLLM"
     )
     parser.add_argument(
-        "--dataset-path",
-        type=str,
-        required=True,
-        help="Path or S3 URI to ODEX dataset JSONL",
-    )
-    parser.add_argument(
         "--prompted-dataset-path",
         type=str,
         required=True,
@@ -221,13 +193,16 @@ def main():
     ray.init(address=args.ray_address, ignore_reinit_error=True)
     logger.info(f"Ray initialized: {ray.cluster_resources()}")
 
-    # Resolve dataset and prompts paths (download from S3 if needed)
-    dataset_path = _resolve_path(args.dataset_path, output_path.parent, "odex_dataset.jsonl")
+    # Resolve prompts path (download from S3 if needed)
     prompts_path = _resolve_path(args.prompted_dataset_path, output_path.parent, "prompted_dataset.jsonl")
 
-    # Load dataset and prompts
-    instances = load_dataset(dataset_path)
-    logger.info(f"Loaded {len(instances)} instances")
+    # Load prompted dataset (contains task_id + text_inputs)
+    prompts = load_prompt_dataset(prompts_path)
+    logger.info(f"Loaded {len(prompts)} prompts from prompted dataset")
+
+    # Build instance list from prompted dataset (only need task_ids for tracking)
+    instances = [{"task_id": task_id} for task_id in prompts.keys()]
+    logger.info(f"Found {len(instances)} tasks in prompted dataset")
 
     # Apply instance limit
     if args.instance_limit > 0:
@@ -247,18 +222,6 @@ def main():
             upload_file(str(output_path), args.s3_upload_uri)
             logger.info(f"Uploaded existing results to {args.s3_upload_uri}")
         return
-
-    # Load prompts
-    prompts = load_prompt_dataset(prompts_path)
-    logger.info(f"Loaded {len(prompts)} prompts")
-
-    # Check that we have prompts for all pending instances
-    missing = [inst["task_id"] for inst in pending if inst.get("task_id") not in prompts]
-    if missing:
-        logger.warning(
-            f"{len(missing)} instances have no prompt in the dataset. "
-            f"First missing: {missing[:5]}"
-        )
 
     # Parse vLLM endpoints
     vllm_endpoints = [ep.strip() for ep in args.vllm_endpoints.split(",")]

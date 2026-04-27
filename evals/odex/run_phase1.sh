@@ -25,7 +25,6 @@ set -euo pipefail
 RAY_ADDRESS="${RAY_ADDRESS:-http://127.0.0.1:8265}"
 VLLM_ENDPOINTS="${VLLM_ENDPOINTS:-http://vllm-server:8000}"
 MODEL_NAME_OR_PATH="${MODEL_NAME_OR_PATH:-meta-llama/Llama-3.1-8B-Instruct}"
-DATASET_PATH="${DATASET_PATH:-s3://odex/dataset/odex.jsonl}"
 PROMPTED_DATASET_PATH="${PROMPTED_DATASET_PATH:-s3://odex/prompts/prompted_dataset.jsonl}"
 NUM_WORKERS="${NUM_WORKERS:-2}"
 INSTANCE_LIMIT="${INSTANCE_LIMIT:-0}"
@@ -42,7 +41,6 @@ fi
 # Build command args
 CMD_ARGS=(
     python3 -m evals.odex.run_code_generation
-    --dataset-path "${DATASET_PATH}"
     --prompted-dataset-path "${PROMPTED_DATASET_PATH}"
     --vllm-endpoints "${VLLM_ENDPOINTS}"
     --model-name-or-path "${MODEL_NAME_OR_PATH}"
