@@ -1,30 +1,68 @@
 """Build prompted dataset for ODEX evaluation.
 
 Uses the common prompt builder scaffolding with ODEX-specific callbacks.
+
+Usage:
+    python -m evals.odex.build_prompt_dataset \
+        --dataset-path /path/to/odex.jsonl \
+        --output /tmp/prompted_dataset.jsonl \
+        --s3-upload-uri s3://odex/prompts/prompted_dataset.jsonl
 """
 
 from __future__ import annotations
 
 import argparse
+import json
+import logging
 from pathlib import Path
 
-from evals.common.prompt_builder import build_prompted_dataset_main
-from .prompt import build_odex_prompt
+from evals.common.s3_storage import upload_file
+from .prompt import create_prompt_dataset
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+logger = logging.getLogger(__name__)
 
 
-def _load_odex_dataset(dataset_path: Path) -> list[dict]:
-    """Load ODEX dataset from JSONL file.
+def main():
+    parser = argparse.ArgumentParser(
+        description="Build ODEX prompted dataset (one-time prep step)"
+    )
+    parser.add_argument(
+        "--dataset-path",
+        type=str,
+        required=True,
+        help="Path to ODEX dataset JSONL file",
+    )
+    parser.add_argument(
+        "--output-path",
+        type=str,
+        required=True,
+        help="Local path to write the prompted dataset JSONL",
+    )
+    parser.add_argument(
+        "--include-tests",
+        action="store_true",
+        help="Include test cases in the prompt",
+    )
+    parser.add_argument(
+        "--instance-limit",
+        type=int,
+        default=0,
+        help="Max instances to process (0 = no limit)",
+    )
+    parser.add_argument(
+        "--s3-upload-uri",
+        type=str,
+        default=None,
+        help="S3 URI to upload the prompted dataset",
+    )
 
-    Args:
-        dataset_path: Path to ODEX JSONL dataset.
+    args = parser.parse_args()
 
-    Returns:
-        List of ODEX instances (dicts with task_id, intent, test_list).
-    """
-    import json
-
+    # Load ODEX dataset
+    logger.info(f"Loading dataset from {args.dataset_path}")
     instances = []
-    with open(dataset_path) as f:
+    with open(args.dataset_path) as f:
         for line in f:
             line = line.strip()
             if not line:
@@ -32,42 +70,27 @@ def _load_odex_dataset(dataset_path: Path) -> list[dict]:
             instance = json.loads(line)
             instances.append(instance)
 
-    return instances
+    logger.info(f"Loaded {len(instances)} instances")
 
+    # Apply instance limit
+    if args.instance_limit > 0:
+        instances = instances[:args.instance_limit]
+        logger.info(f"Limited to {len(instances)} instances")
 
-def _build_odex_prompt_callback(instance: dict, args: argparse.Namespace) -> str:
-    """Callback to build a prompt for an ODEX instance.
-
-    Args:
-        instance: ODEX dataset instance.
-        args: CLI arguments (includes --include-tests flag).
-
-    Returns:
-        Formatted prompt string.
-    """
-    return build_odex_prompt(
-        instance=instance,
-        include_tests=getattr(args, "include_tests", False),
+    # Build prompted dataset
+    output_path = create_prompt_dataset(
+        instances=instances,
+        output_path=Path(args.output_path),
+        include_tests=args.include_tests,
     )
 
+    logger.info(f"Prompted dataset written to {output_path}")
 
-def _add_extra_args(parser: argparse.ArgumentParser) -> None:
-    """Add ODEX-specific CLI arguments.
-
-    Args:
-        parser: Argument parser to extend.
-    """
-    parser.add_argument(
-        "--include-tests",
-        action="store_true",
-        help="Include test cases in the prompt",
-    )
+    # Upload to S3 if requested
+    if args.s3_upload_uri:
+        upload_file(str(output_path), args.s3_upload_uri)
+        logger.info(f"Uploaded to {args.s3_upload_uri}")
 
 
 if __name__ == "__main__":
-    build_prompted_dataset_main(
-        dataset_loader=_load_odex_dataset,
-        prompt_builder=_build_odex_prompt_callback,
-        extra_args_fn=_add_extra_args,
-        instance_id_key="task_id",
-    )
+    main()
