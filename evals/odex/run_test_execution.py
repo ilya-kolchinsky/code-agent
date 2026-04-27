@@ -339,11 +339,12 @@ def main():
 
     # Optionally upload to S3
     if args.s3_upload_uri:
-        upload_file(str(task_results_path), f"{args.s3_upload_uri}/task_results.jsonl")
+        s3_prefix = args.s3_upload_uri.rstrip("/")
+        upload_file(str(task_results_path), f"{s3_prefix}/task_results.jsonl")
         upload_file(
-            str(aggregate_report_path), f"{args.s3_upload_uri}/aggregate_report.json"
+            str(aggregate_report_path), f"{s3_prefix}/aggregate_report.json"
         )
-        logger.info(f"Uploaded results to {args.s3_upload_uri}")
+        logger.info(f"Uploaded results to {s3_prefix}")
 
     logger.info("Phase 2 complete!")
 

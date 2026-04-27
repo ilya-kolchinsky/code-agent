@@ -38,7 +38,7 @@ def _job_name(task_id: str, run_id: str) -> str:
 
     K8s names must be lowercase, alphanumeric + hyphens, max 63 chars.
     """
-    safe_id = task_id.lower().replace("_", "-").replace("/", "-")
+    safe_id = str(task_id).lower().replace("_", "-").replace("/", "-")
     uid = hashlib.md5(f"{task_id}-{run_id}-{time.time()}".encode()).hexdigest()[:6]
     # Truncate safe_id first to preserve the uid suffix (uniqueness)
     max_base_len = 63 - len("odex--") - len(uid)
