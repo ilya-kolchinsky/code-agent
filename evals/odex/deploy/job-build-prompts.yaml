@@ -46,7 +46,7 @@ spec:
             - -m
             - evals.odex.build_prompt_dataset
             - --dataset
-            - neulab/odex
+            - odex
             - --output
             - /tmp/prompted_dataset.jsonl
             - --s3-output

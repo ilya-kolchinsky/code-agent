@@ -24,25 +24,47 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 from pathlib import Path
-
-from datasets import load_dataset
+from urllib.request import urlopen
 
 from evals.common.prompt_builder import build_prompted_dataset_main
 from evals.odex.prompt import create_prompt_dataset
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+logger = logging.getLogger(__name__)
 
 
 def load_odex_dataset(name: str, split: str) -> list[dict]:
-    """Load ODEX dataset from HuggingFace.
+    """Load ODEX dataset from GitHub repository.
 
-    The ODEX dataset uses an older loading script format that's no longer
-    supported. We load it with trust_remote_code=True as a workaround.
+    Downloads en_test.jsonl directly from:
+    https://github.com/zorazrw/odex/tree/master/data
+
+    Args:
+        name: Dataset name (ignored, always uses zorazrw/odex)
+        split: Dataset split (ignored, always uses test)
+
+    Returns:
+        List of ODEX instances.
     """
-    dataset = load_dataset(name, split=split, trust_remote_code=True)
-    return list(dataset)
+    # Always use en_test.jsonl from GitHub
+    url = "https://raw.githubusercontent.com/zorazrw/odex/master/data/en_test.jsonl"
+
+    logger.info(f"Downloading ODEX dataset from {url}")
+
+    instances = []
+    with urlopen(url) as response:
+        for line in response:
+            line = line.decode("utf-8").strip()
+            if not line:
+                continue
+            instance = json.loads(line)
+            instances.append(instance)
+
+    logger.info(f"Loaded {len(instances)} instances from ODEX test set")
+    return instances
 
 
 def build_prompts(instances: list[dict], output_path: Path, **kwargs) -> Path:
