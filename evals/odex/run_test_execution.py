@@ -125,16 +125,11 @@ def distribute_tests(
     logger.info(f"Created {num_workers} TestWorker actors")
 
     # Distribute instances across workers
+    # If fewer instances than workers, some workers will be idle
     chunk_size = max(1, len(instances) // num_workers)
-    chunks = [
-        instances[i : i + chunk_size]
-        for i in range(0, len(instances), chunk_size)
-    ]
-
-    # Round-robin remaining instances
-    for i, worker_idx in enumerate(range(len(chunks), len(workers))):
-        if i < len(instances):
-            chunks.append([instances[len(chunks) * chunk_size + i]])
+    chunks = []
+    for i in range(0, len(instances), chunk_size):
+        chunks.append(instances[i : i + chunk_size])
 
     logger.info(f"Split {len(instances)} instances into {len(chunks)} chunks")
 
