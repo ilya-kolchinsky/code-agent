@@ -194,7 +194,7 @@ def _build_job_manifest(
         metadata=k8s_client.V1ObjectMeta(
             labels={
                 "app": "odex-eval",
-                "task-id": task_id[:63],
+                "task-id": str(task_id)[:63],
                 "run-id": run_id[:63],
             },
         ),
@@ -216,7 +216,7 @@ def _build_job_manifest(
             namespace=namespace,
             labels={
                 "app": "odex-eval",
-                "task-id": task_id[:63],
+                "task-id": str(task_id)[:63],
                 "run-id": run_id[:63],
             },
         ),
