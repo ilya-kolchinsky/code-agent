@@ -36,8 +36,12 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 
 
 def load_odex_dataset(name: str, split: str) -> list[dict]:
-    """Load ODEX dataset from HuggingFace."""
-    dataset = load_dataset(name, split=split)
+    """Load ODEX dataset from HuggingFace.
+
+    The ODEX dataset uses an older loading script format that's no longer
+    supported. We load it with trust_remote_code=True as a workaround.
+    """
+    dataset = load_dataset(name, split=split, trust_remote_code=True)
     return list(dataset)
 
 
