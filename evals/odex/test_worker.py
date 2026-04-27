@@ -68,9 +68,13 @@ class TestWorker:
                 continue
 
             solution = solutions.get(task_id, "")
-            test_cases = instance.get("test_list", [])
 
-            if not test_cases:
+            # ODEX format: test assertions with entry_point
+            test_assertions = instance.get("test", [])
+            test_start = instance.get("test_start", "")
+            entry_point = instance.get("entry_point", "")
+
+            if not test_assertions:
                 logger.warning(f"Task {task_id} has no test cases, skipping")
                 task_result = grade_task(
                     task_id=task_id,
@@ -81,12 +85,19 @@ class TestWorker:
                 results.append(task_result)
                 continue
 
+            # Build ODEX test metadata
+            test_metadata = {
+                "test_start": test_start,
+                "test_assertions": test_assertions,
+                "entry_point": entry_point,
+            }
+
             # Execute the solution against test cases
             exec_result: ExecutionResult = self.executor.execute_task(
                 task_id=task_id,
                 run_id=run_id,
                 solution_code=solution,
-                test_cases=test_cases,
+                test_metadata=test_metadata,
             )
 
             # Grade the execution result

@@ -46,17 +46,21 @@ def _job_name(task_id: str, run_id: str) -> str:
     return f"odex-{safe_id}-{uid}"
 
 
-def _build_execution_script(solution_code: str, test_cases: list[dict]) -> str:
-    """Build a Python script that executes the solution against test cases.
+def _build_execution_script(solution_code: str, test_metadata: dict) -> str:
+    """Build a Python script that executes the solution against ODEX test assertions.
 
     Args:
         solution_code: The generated Python code to test.
-        test_cases: List of test case dicts with 'inputs' and 'output'.
+        test_metadata: Dict with 'test_start', 'test_assertions', 'entry_point'.
 
     Returns:
         Python script that runs the tests and outputs JSON results.
     """
-    # Build test execution script
+    test_start = test_metadata.get("test_start", "")
+    test_assertions = test_metadata.get("test_assertions", [])
+    entry_point = test_metadata.get("entry_point", "")
+
+    # Build test execution script for ODEX assertion-based tests
     script = f'''
 import json
 import sys
@@ -65,8 +69,10 @@ import traceback
 # The generated solution
 solution_code = """{solution_code}"""
 
-# Test cases
-test_cases = {json.dumps(test_cases)}
+# ODEX test metadata
+test_start = """{test_start}"""
+test_assertions = {json.dumps(test_assertions)}
+entry_point = "{entry_point}"
 
 results = []
 
@@ -75,49 +81,54 @@ try:
     exec_globals = {{}}
     exec(solution_code, exec_globals)
 
-    # Find the defined function (assume single top-level function)
-    func = None
-    for name, obj in exec_globals.items():
-        if callable(obj) and not name.startswith("_"):
-            func = obj
-            break
+    # Get the entry point function
+    if entry_point and entry_point in exec_globals:
+        solution_func = exec_globals[entry_point]
+    else:
+        # Fallback: find any callable
+        solution_func = None
+        for name, obj in exec_globals.items():
+            if callable(obj) and not name.startswith("_"):
+                solution_func = obj
+                break
 
-    if func is None:
+    if solution_func is None:
         print(json.dumps({{"error": "No function found in solution code"}}))
         sys.exit(1)
 
-    # Run each test case
-    for i, test in enumerate(test_cases):
-        inputs = test.get("inputs", {{}})
-        expected = test.get("output")
-
+    # Build and execute the check function for each assertion
+    for i, assertion in enumerate(test_assertions):
         try:
-            # Call the function with test inputs
-            if isinstance(inputs, dict):
-                actual = func(**inputs)
-            elif isinstance(inputs, list):
-                actual = func(*inputs)
-            else:
-                actual = func(inputs)
+            # Create check function with this assertion
+            check_code = test_start + assertion
+            check_globals = {{"candidate": solution_func}}
+            exec(check_code, check_globals)
 
-            passed = actual == expected
+            # If we have a check function, call it
+            if "check" in check_globals:
+                check_func = check_globals["check"]
+                check_func(solution_func)
 
+            # If no exception was raised, test passed
             results.append({{
                 "test_index": i,
-                "inputs": inputs,
-                "expected": expected,
-                "actual": actual,
-                "passed": passed,
+                "assertion": assertion.strip(),
+                "passed": True,
                 "error": None,
+            }})
+        except AssertionError as e:
+            results.append({{
+                "test_index": i,
+                "assertion": assertion.strip(),
+                "passed": False,
+                "error": f"AssertionError: {{str(e) or 'assertion failed'}}",
             }})
         except Exception as e:
             results.append({{
                 "test_index": i,
-                "inputs": inputs,
-                "expected": expected,
-                "actual": None,
+                "assertion": assertion.strip(),
                 "passed": False,
-                "error": str(e),
+                "error": f"{{type(e).__name__}}: {{str(e)}}",
             }})
 
     print(json.dumps({{"results": results}}))
@@ -262,7 +273,7 @@ class CodeExecutor:
         task_id: str,
         run_id: str,
         solution_code: str,
-        test_cases: list[dict],
+        test_metadata: dict,
     ) -> str:
         """Create a K8s Job to execute code against test cases.
 
@@ -270,12 +281,12 @@ class CodeExecutor:
             task_id: ODEX task ID.
             run_id: Unique run identifier.
             solution_code: The generated Python code.
-            test_cases: List of test case dicts.
+            test_metadata: ODEX test metadata with assertions.
 
         Returns:
             The Job name.
         """
-        execution_script = _build_execution_script(solution_code, test_cases)
+        execution_script = _build_execution_script(solution_code, test_metadata)
 
         job = _build_job_manifest(
             task_id=task_id,
@@ -378,7 +389,7 @@ class CodeExecutor:
         task_id: str,
         run_id: str,
         solution_code: str,
-        test_cases: list[dict],
+        test_metadata: dict,
     ) -> ExecutionResult:
         """Execute a solution against test cases.
 
@@ -388,14 +399,14 @@ class CodeExecutor:
             task_id: ODEX task ID.
             run_id: Unique run identifier.
             solution_code: The generated Python code.
-            test_cases: List of test case dicts.
+            test_metadata: ODEX test metadata with assertions.
 
         Returns:
             ExecutionResult with test outcomes.
         """
         job_name = None
         try:
-            job_name = self.create_job(task_id, run_id, solution_code, test_cases)
+            job_name = self.create_job(task_id, run_id, solution_code, test_metadata)
             succeeded, timed_out = self.wait_for_job(job_name)
             logs = self.get_pod_logs(job_name)
 

@@ -331,8 +331,8 @@ def main():
     )
 
     # Save results
-    task_results_path = args.output_dir / "task_results.jsonl"
-    aggregate_report_path = args.output_dir / "aggregate_report.json"
+    task_results_path = output_dir / "task_results.jsonl"
+    aggregate_report_path = output_dir / "aggregate_report.json"
 
     save_task_results(task_results, task_results_path)
     save_aggregate_report(task_results, aggregate_report_path)
