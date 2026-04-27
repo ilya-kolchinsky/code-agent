@@ -61,18 +61,19 @@ def _build_execution_script(solution_code: str, test_metadata: dict) -> str:
     entry_point = test_metadata.get("entry_point", "")
 
     # Build test execution script for ODEX assertion-based tests
+    # Use json.dumps to safely embed strings with proper escaping
     script = f'''
 import json
 import sys
 import traceback
 
 # The generated solution
-solution_code = """{solution_code}"""
+solution_code = {json.dumps(solution_code)}
 
 # ODEX test metadata
-test_start = """{test_start}"""
+test_start = {json.dumps(test_start)}
 test_assertions = {json.dumps(test_assertions)}
-entry_point = "{entry_point}"
+entry_point = {json.dumps(entry_point)}
 
 results = []
 
