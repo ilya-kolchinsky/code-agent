@@ -431,8 +431,6 @@ class CodeExecutor:
 
             # Parse JSON results from logs
             try:
-                # Debug: log the raw output
-                logger.info(f"Raw pod logs for task {task_id}: {logs[:500]}")
                 result_data = json.loads(logs.strip())
                 if "error" in result_data:
                     return ExecutionResult(
@@ -452,12 +450,14 @@ class CodeExecutor:
                 )
 
             except json.JSONDecodeError as e:
+                # Include first 200 chars of raw output in error for debugging
+                raw_preview = logs[:200] if logs else "(empty)"
                 return ExecutionResult(
                     task_id=task_id,
                     succeeded=False,
                     timed_out=False,
                     outputs=[],
-                    error=f"Failed to parse execution output: {e}",
+                    error=f"Failed to parse execution output: {e}. Raw output: {raw_preview}",
                 )
 
         except Exception as e:
