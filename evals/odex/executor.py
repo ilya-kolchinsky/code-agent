@@ -433,8 +433,14 @@ class CodeExecutor:
                 )
 
             # Parse JSON results from logs
+            # Skip debugging output if present
+            json_output = logs
+            if "=== Script Output ===" in logs:
+                # Extract only the part after the script output marker
+                json_output = logs.split("=== Script Output ===")[1].strip()
+
             try:
-                result_data = json.loads(logs.strip())
+                result_data = json.loads(json_output.strip())
                 if "error" in result_data:
                     return ExecutionResult(
                         task_id=task_id,
