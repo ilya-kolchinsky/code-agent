@@ -431,6 +431,8 @@ class CodeExecutor:
 
             # Parse JSON results from logs
             try:
+                # Debug: log the raw output
+                logger.info(f"Raw pod logs for task {task_id}: {logs[:500]}")
                 result_data = json.loads(logs.strip())
                 if "error" in result_data:
                     return ExecutionResult(
