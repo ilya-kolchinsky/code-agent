@@ -167,10 +167,13 @@ def _build_job_manifest(
     job_name = _job_name(task_id, run_id)
 
     # Embed the script in the command
+    # Save script for debugging
+    debug_path = f"/tmp/debug_script_{task_id}.py"
     command = [
         "/bin/bash",
         "-c",
         f"cat > /tmp/test_runner.py << 'EOF'\n{execution_script}\nEOF\n"
+        f"cp /tmp/test_runner.py {debug_path}\n"
         f"python3 /tmp/test_runner.py 2>&1"
     ]
 
