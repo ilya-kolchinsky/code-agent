@@ -166,15 +166,12 @@ def _build_job_manifest(
     """
     job_name = _job_name(task_id, run_id)
 
-    # Embed the script in the command with debugging
+    # Embed the script in the command
     command = [
         "/bin/bash",
         "-c",
         f"cat > /tmp/test_runner.py << 'EOF'\n{execution_script}\nEOF\n"
-        f"echo '=== Generated Script ==='\n"
-        f"cat /tmp/test_runner.py\n"
-        f"echo '=== Script Output ==='\n"
-        f"python3 /tmp/test_runner.py"
+        f"python3 /tmp/test_runner.py 2>&1"
     ]
 
     container = k8s_client.V1Container(
@@ -433,23 +430,8 @@ class CodeExecutor:
                 )
 
             # Parse JSON results from logs
-            # Skip debugging output if present
-            json_output = logs
-            if "=== Script Output ===" in logs:
-                # Extract only the part after the script output marker
-                json_output = logs.split("=== Script Output ===")[1].strip()
-            elif "=== Generated Script ===" in logs:
-                # If we have the script marker but no output marker, the script failed
-                return ExecutionResult(
-                    task_id=task_id,
-                    succeeded=False,
-                    timed_out=False,
-                    outputs=[],
-                    error=f"Script execution failed (no output section). Raw logs: {logs[:500]}",
-                )
-
             try:
-                result_data = json.loads(json_output.strip())
+                result_data = json.loads(logs.strip())
                 if "error" in result_data:
                     return ExecutionResult(
                         task_id=task_id,
@@ -468,8 +450,8 @@ class CodeExecutor:
                 )
 
             except json.JSONDecodeError as e:
-                # Include first 500 chars of raw output in error for debugging
-                raw_preview = logs[:500] if logs else "(empty)"
+                # Include first 1000 chars of raw output in error for debugging
+                raw_preview = logs[:1000] if logs else "(empty)"
                 return ExecutionResult(
                     task_id=task_id,
                     succeeded=False,
