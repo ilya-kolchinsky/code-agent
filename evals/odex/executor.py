@@ -438,6 +438,15 @@ class CodeExecutor:
             if "=== Script Output ===" in logs:
                 # Extract only the part after the script output marker
                 json_output = logs.split("=== Script Output ===")[1].strip()
+            elif "=== Generated Script ===" in logs:
+                # If we have the script marker but no output marker, the script failed
+                return ExecutionResult(
+                    task_id=task_id,
+                    succeeded=False,
+                    timed_out=False,
+                    outputs=[],
+                    error=f"Script execution failed (no output section). Raw logs: {logs[:500]}",
+                )
 
             try:
                 result_data = json.loads(json_output.strip())
@@ -459,8 +468,8 @@ class CodeExecutor:
                 )
 
             except json.JSONDecodeError as e:
-                # Include first 200 chars of raw output in error for debugging
-                raw_preview = logs[:200] if logs else "(empty)"
+                # Include first 500 chars of raw output in error for debugging
+                raw_preview = logs[:500] if logs else "(empty)"
                 return ExecutionResult(
                     task_id=task_id,
                     succeeded=False,
