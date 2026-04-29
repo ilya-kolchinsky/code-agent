@@ -166,11 +166,14 @@ def _build_job_manifest(
     """
     job_name = _job_name(task_id, run_id)
 
-    # Embed the script in the command
+    # Embed the script in the command with debugging
     command = [
         "/bin/bash",
         "-c",
         f"cat > /tmp/test_runner.py << 'EOF'\n{execution_script}\nEOF\n"
+        f"echo '=== Generated Script ==='\n"
+        f"cat /tmp/test_runner.py\n"
+        f"echo '=== Script Output ==='\n"
         f"python3 /tmp/test_runner.py"
     ]
 
