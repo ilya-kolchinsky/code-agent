@@ -206,7 +206,7 @@ def _build_job_manifest(
         template=template,
         backoff_limit=0,
         active_deadline_seconds=timeout,
-        ttl_seconds_after_finished=300,
+        ttl_seconds_after_finished=7200,  # Increased for debugging
     )
 
     job = k8s_client.V1Job(
