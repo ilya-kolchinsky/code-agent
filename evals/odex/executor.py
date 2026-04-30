@@ -168,9 +168,12 @@ def _build_job_manifest(
     job_name = _job_name(task_id, run_id)
 
     # Embed the script in the command
+    # Install common packages and run in /tmp for file write permissions
     command = [
         "/bin/bash",
         "-c",
+        f"pip install -q numpy pandas requests mock 2>&1 && "
+        f"cd /tmp && "
         f"cat > /tmp/test_runner.py << 'EOF'\n{execution_script}\nEOF\n"
         f"python3 /tmp/test_runner.py 2>&1"
     ]
