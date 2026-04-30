@@ -249,8 +249,8 @@ def main():
     parser.add_argument(
         "--image",
         type=str,
-        default="python:3.11-slim",
-        help="Python container image (default: python:3.11-slim)",
+        default="image-registry.openshift-image-registry.svc:5000/code-agent/odex-executor:latest",
+        help="Python container image (default: odex-executor with numpy/pandas/requests/mock)",
     )
     parser.add_argument(
         "--output-dir",

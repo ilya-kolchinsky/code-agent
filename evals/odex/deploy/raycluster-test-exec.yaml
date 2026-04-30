@@ -69,6 +69,9 @@ spec:
             env:
               - name: NVIDIA_VISIBLE_DEVICES
                 value: "void"
+              # Disable TLS for Ray GCS to allow local connections
+              - name: RAY_USE_TLS
+                value: "0"
               # MinIO/S3 credentials for reading solutions and writing results
               - name: AWS_ACCESS_KEY_ID
                 valueFrom:
