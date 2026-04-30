@@ -431,18 +431,25 @@ class CodeExecutor:
                 )
 
             # Parse JSON results from logs
+            # Strip any spurious output before the JSON (e.g., print statements in generated code)
+            logs_stripped = logs.strip()
+            json_start = logs_stripped.find('{')
+            if json_start > 0:
+                # Found text before the JSON, strip it
+                logs_stripped = logs_stripped[json_start:]
+
             # Fix: K8s Python client sometimes returns string with Python dict syntax
             # instead of proper JSON (single quotes, capitalized True/False/None)
             try:
-                result_data = json.loads(logs.strip())
+                result_data = json.loads(logs_stripped)
             except json.JSONDecodeError as e:
                 # Try parsing as Python literal and convert to JSON
                 try:
-                    result_dict = ast.literal_eval(logs.strip())
+                    result_dict = ast.literal_eval(logs_stripped)
                     result_data = json.loads(json.dumps(result_dict))
                 except Exception:
                     # ast parsing also failed - return error with original JSON exception
-                    raw_preview = logs[:1000] if logs else "(empty)"
+                    raw_preview = logs_stripped[:1000] if logs_stripped else "(empty)"
                     return ExecutionResult(
                         task_id=task_id,
                         succeeded=False,
