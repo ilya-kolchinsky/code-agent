@@ -209,7 +209,7 @@ def _build_job_manifest(
         template=template,
         backoff_limit=0,
         active_deadline_seconds=timeout,
-        ttl_seconds_after_finished=7200,  # Increased for debugging
+        ttl_seconds_after_finished=36000,  # 10 hours for debugging script inspection
     )
 
     job = k8s_client.V1Job(
@@ -474,5 +474,7 @@ class CodeExecutor:
             )
 
         finally:
-            if job_name:
-                self.delete_job(job_name)
+            # Temporarily skip deletion for debugging
+            pass
+            # if job_name:
+            #     self.delete_job(job_name)
