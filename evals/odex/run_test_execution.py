@@ -28,22 +28,38 @@ logger = logging.getLogger(__name__)
 def load_dataset(dataset_path: Path) -> list[dict]:
     """Load ODEX dataset instances from JSONL.
 
+    ODEX has duplicate task_ids (439 instances, 333 unique task_ids).
+    We assign composite IDs: {task_id}_{index} for instances with the same task_id.
+
     Args:
         dataset_path: Path to the ODEX dataset file.
 
     Returns:
-        List of ODEX dataset instances with test_list.
+        List of ODEX dataset instances with test_list and instance_id.
     """
     instances = []
+    task_id_counts = {}
+
     with open(dataset_path) as f:
         for line in f:
             line = line.strip()
             if not line:
                 continue
             instance = json.loads(line)
+
+            # Track how many times we've seen this task_id
+            task_id = instance.get("task_id")
+            if task_id:
+                count = task_id_counts.get(task_id, 0)
+                # Assign composite instance_id: task_id_index
+                instance["instance_id"] = f"{task_id}_{count}"
+                task_id_counts[task_id] = count + 1
+
             instances.append(instance)
 
     logger.info(f"Loaded {len(instances)} instances from {dataset_path}")
+    unique_tasks = len(task_id_counts)
+    logger.info(f"Dataset has {unique_tasks} unique task_ids, {len(instances)} total instances")
     return instances
 
 
