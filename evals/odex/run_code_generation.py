@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 
 def load_existing_solutions(output_path: Path) -> set[str]:
-    """Find task IDs that already have solutions on disk (resumability)."""
+    """Find instance IDs that already have solutions on disk (resumability)."""
     completed = set()
     if not output_path.exists():
         return completed
@@ -37,9 +37,9 @@ def load_existing_solutions(output_path: Path) -> set[str]:
                 continue
             try:
                 entry = json.loads(line)
-                task_id = entry.get("task_id")
-                if task_id:
-                    completed.add(task_id)
+                instance_id = entry.get("instance_id")
+                if instance_id:
+                    completed.add(instance_id)
             except json.JSONDecodeError:
                 pass
 
@@ -191,13 +191,13 @@ def main():
     # Resolve prompts path (download from S3 if needed)
     prompts_path = _resolve_path(args.prompted_dataset_path, output_path.parent, "prompted_dataset.jsonl")
 
-    # Load prompted dataset (contains task_id + text_inputs)
+    # Load prompted dataset (contains instance_id + text_inputs)
     prompts = load_prompt_dataset(prompts_path)
     logger.info(f"Loaded {len(prompts)} prompts from prompted dataset")
 
-    # Build instance list from prompted dataset (only need task_ids for tracking)
-    instances = [{"task_id": task_id} for task_id in prompts.keys()]
-    logger.info(f"Found {len(instances)} tasks in prompted dataset")
+    # Build instance list from prompted dataset (only need instance_ids for tracking)
+    instances = [{"instance_id": instance_id} for instance_id in prompts.keys()]
+    logger.info(f"Found {len(instances)} instances in prompted dataset")
 
     # Apply instance limit
     if args.instance_limit > 0:
@@ -208,7 +208,7 @@ def main():
     completed = load_existing_solutions(output_path)
     if completed:
         logger.info(f"Skipping {len(completed)} already-completed instances")
-    pending = [inst for inst in instances if inst.get("task_id") not in completed]
+    pending = [inst for inst in instances if inst.get("instance_id") not in completed]
     logger.info(f"Generating solutions for {len(pending)} instances")
 
     if not pending:

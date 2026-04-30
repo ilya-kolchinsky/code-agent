@@ -42,12 +42,15 @@ def load_odex_dataset(name: str, split: str) -> list[dict]:
     Downloads en_test.jsonl directly from:
     https://github.com/zorazrw/odex/tree/master/data
 
+    ODEX has duplicate task_ids (439 instances, 333 unique task_ids).
+    We assign composite IDs: {task_id}_{index} for instances with the same task_id.
+
     Args:
         name: Dataset name (ignored, always uses zorazrw/odex)
         split: Dataset split (ignored, always uses test)
 
     Returns:
-        List of ODEX instances.
+        List of ODEX instances with unique instance_id field.
     """
     # Always use en_test.jsonl from GitHub
     url = "https://raw.githubusercontent.com/zorazrw/odex/master/data/en_test.jsonl"
@@ -55,15 +58,28 @@ def load_odex_dataset(name: str, split: str) -> list[dict]:
     logger.info(f"Downloading ODEX dataset from {url}")
 
     instances = []
+    task_id_counts = {}
+
     with urlopen(url) as response:
         for line in response:
             line = line.decode("utf-8").strip()
             if not line:
                 continue
             instance = json.loads(line)
+
+            # Track how many times we've seen this task_id
+            task_id = instance.get("task_id")
+            if task_id:
+                count = task_id_counts.get(task_id, 0)
+                # Assign composite instance_id: task_id_index
+                instance["instance_id"] = f"{task_id}_{count}"
+                task_id_counts[task_id] = count + 1
+
             instances.append(instance)
 
     logger.info(f"Loaded {len(instances)} instances from ODEX test set")
+    unique_tasks = len(task_id_counts)
+    logger.info(f"Dataset has {unique_tasks} unique task_ids, {len(instances)} total instances")
     return instances
 
 

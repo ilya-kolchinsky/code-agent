@@ -68,7 +68,7 @@ def load_solutions(solutions_path: Path) -> dict[str, str]:
         solutions_path: Path to Phase 1 output (code solutions).
 
     Returns:
-        Dict mapping task_id -> solution code.
+        Dict mapping instance_id -> solution code.
     """
     solutions = {}
     with open(solutions_path) as f:
@@ -77,10 +77,10 @@ def load_solutions(solutions_path: Path) -> dict[str, str]:
             if not line:
                 continue
             entry = json.loads(line)
-            task_id = entry.get("task_id")
+            instance_id = entry.get("instance_id")
             solution = entry.get("solution", "")
-            if task_id:
-                solutions[task_id] = solution
+            if instance_id:
+                solutions[instance_id] = solution
 
     logger.info(f"Loaded {len(solutions)} solutions from {solutions_path}")
     return solutions

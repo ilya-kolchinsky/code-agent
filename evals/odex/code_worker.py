@@ -20,7 +20,7 @@ class CodeWorker(InferenceWorker):
     """Generates code solutions for ODEX tasks via vLLM.
 
     Inherits from InferenceWorker and customizes for ODEX:
-    - Uses task_id as the instance identifier
+    - Uses instance_id as the instance identifier (composite: task_id_index)
     - Extracts code from markdown fences
     - Returns predictions with ODEX-specific schema
     """
@@ -34,22 +34,21 @@ class CodeWorker(InferenceWorker):
 
         Args:
             instances: List of ODEX dataset instances.
-            prompts: Map of task_id -> pre-built prompt text.
+            prompts: Map of instance_id -> pre-built prompt text.
 
         Returns:
-            List of dicts with keys: task_id, solution,
+            List of dicts with keys: instance_id, solution,
             full_output, model_name_or_path, error.
         """
         results = self.generate_batch(
             instances=instances,
             prompts=prompts,
             extract_fn=extract_code_from_response,
-            instance_id_key="task_id",
+            instance_id_key="instance_id",
         )
 
         # Rename 'prediction' to 'solution' for ODEX schema
         for result in results:
             result["solution"] = result.pop("prediction")
-            result["task_id"] = result.pop("instance_id")
 
         return results

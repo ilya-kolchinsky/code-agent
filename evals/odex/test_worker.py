@@ -53,7 +53,7 @@ class TestWorker:
 
         Args:
             instances: List of ODEX dataset instances with test_list.
-            solutions: Map of task_id -> generated code solution.
+            solutions: Map of instance_id -> generated code solution.
             run_id: Unique run identifier for this batch.
 
         Returns:
@@ -62,12 +62,16 @@ class TestWorker:
         results = []
 
         for instance in instances:
+            # Get both task_id (original) and instance_id (composite)
             task_id = instance.get("task_id", "")
-            if not task_id:
-                logger.warning("Instance missing task_id, skipping")
+            instance_id = instance.get("instance_id", "")
+
+            if not instance_id:
+                logger.warning("Instance missing instance_id, skipping")
                 continue
 
-            solution = solutions.get(task_id, "")
+            # Look up solution using instance_id (composite key)
+            solution = solutions.get(instance_id, "")
 
             # ODEX format: test assertions with entry_point
             test_assertions = instance.get("test", [])
@@ -75,9 +79,9 @@ class TestWorker:
             entry_point = instance.get("entry_point", "")
 
             if not test_assertions:
-                logger.warning(f"Task {task_id} has no test cases, skipping")
+                logger.warning(f"Instance {instance_id} has no test cases, skipping")
                 task_result = grade_task(
-                    task_id=task_id,
+                    task_id=instance_id,
                     solution=solution,
                     test_outputs=[],
                     error="No test cases available",
@@ -93,8 +97,9 @@ class TestWorker:
             }
 
             # Execute the solution against test cases
+            # Use instance_id for K8s job naming
             exec_result: ExecutionResult = self.executor.execute_task(
-                task_id=task_id,
+                task_id=instance_id,
                 run_id=run_id,
                 solution_code=solution,
                 test_metadata=test_metadata,
@@ -102,7 +107,7 @@ class TestWorker:
 
             # Grade the execution result
             task_result = grade_task(
-                task_id=task_id,
+                task_id=instance_id,
                 solution=solution,
                 test_outputs=exec_result.outputs,
                 error=exec_result.error,
@@ -112,7 +117,7 @@ class TestWorker:
 
             status = "PASSED" if task_result.passed else "FAILED"
             logger.info(
-                f"Task {task_id}: {status} "
+                f"Instance {instance_id} (task {task_id}): {status} "
                 f"({task_result.passed_tests}/{task_result.total_tests} tests)"
             )
 

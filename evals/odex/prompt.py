@@ -82,15 +82,19 @@ def create_prompt_dataset(
 
     with open(output_path, "w") as f:
         for instance in instances:
+            # Use instance_id (composite ID) if available, fallback to task_id
+            instance_id = instance.get("instance_id") or instance.get("task_id", "")
             task_id = instance.get("task_id", "")
-            if not task_id:
-                logger.warning("Instance missing task_id, skipping")
+
+            if not instance_id:
+                logger.warning("Instance missing instance_id and task_id, skipping")
                 continue
 
             prompt = build_odex_prompt(instance, include_tests=include_tests)
 
             entry = {
-                "task_id": task_id,
+                "instance_id": instance_id,
+                "task_id": task_id,  # Keep original task_id for reference
                 "text_inputs": prompt,
             }
             f.write(json.dumps(entry) + "\n")
@@ -100,13 +104,13 @@ def create_prompt_dataset(
 
 
 def load_prompt_dataset(path: str | Path) -> dict[str, str]:
-    """Load a prompted dataset into a map of task_id -> prompt text.
+    """Load a prompted dataset into a map of instance_id -> prompt text.
 
     Args:
         path: Path to the JSONL file produced by create_prompt_dataset.
 
     Returns:
-        Dict mapping task_id to the prompt text (text_inputs field).
+        Dict mapping instance_id to the prompt text (text_inputs field).
     """
     prompts = {}
     with open(path) as f:
@@ -115,10 +119,10 @@ def load_prompt_dataset(path: str | Path) -> dict[str, str]:
             if not line:
                 continue
             entry = json.loads(line)
-            task_id = entry.get("task_id")
+            instance_id = entry.get("instance_id")
             text_inputs = entry.get("text_inputs", "")
-            if task_id and text_inputs:
-                prompts[task_id] = text_inputs
+            if instance_id and text_inputs:
+                prompts[instance_id] = text_inputs
     return prompts
 
 
