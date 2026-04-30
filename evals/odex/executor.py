@@ -433,6 +433,8 @@ class CodeExecutor:
                 )
 
             # Parse JSON results from logs
+            # Debug: log the raw logs
+            logger.info(f"Task {task_id}: Raw logs type={type(logs)}, repr={repr(logs[:500])}")
             try:
                 result_data = json.loads(logs.strip())
                 if "error" in result_data:
