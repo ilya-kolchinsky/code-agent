@@ -1,13 +1,29 @@
 # ODEX test executor image
-# Extends python:3.11-slim with common libraries needed for ODEX tasks
+# Extends python:3.11-slim with ALL libraries needed for ODEX benchmark
+# Based on analysis of all 439 ODEX instances
 
 FROM python:3.11-slim
 
-# Install common packages used by ODEX test cases
+# Install all third-party packages required by ODEX test cases
+# Organized by frequency of use in the dataset
 RUN pip install --no-cache-dir \
+    # Most common (>10 instances)
     numpy \
     pandas \
+    # Common (3-10 instances)
+    matplotlib \
     requests \
+    # Less common (1-3 instances)
+    beautifulsoup4 \
+    django \
+    flask \
+    scipy \
+    multidict \
+    pytz \
+    regex \
+    sqlalchemy \
+    obspy \
+    # Additional utilities
     mock
 
 # Set working directory to /tmp for file write permissions
