@@ -6,6 +6,7 @@ Uses K8s Jobs for sandboxing.
 
 from __future__ import annotations
 
+import ast
 import hashlib
 import json
 import logging
@@ -167,13 +168,10 @@ def _build_job_manifest(
     job_name = _job_name(task_id, run_id)
 
     # Embed the script in the command
-    # Save script for debugging
-    debug_path = f"/tmp/debug_script_{task_id}.py"
     command = [
         "/bin/bash",
         "-c",
         f"cat > /tmp/test_runner.py << 'EOF'\n{execution_script}\nEOF\n"
-        f"cp /tmp/test_runner.py {debug_path}\n"
         f"python3 /tmp/test_runner.py 2>&1"
     ]
 
@@ -209,7 +207,7 @@ def _build_job_manifest(
         template=template,
         backoff_limit=0,
         active_deadline_seconds=timeout,
-        ttl_seconds_after_finished=36000,  # 10 hours for debugging script inspection
+        ttl_seconds_after_finished=300,  # Clean up after 5 minutes
     )
 
     job = k8s_client.V1Job(
@@ -433,37 +431,43 @@ class CodeExecutor:
                 )
 
             # Parse JSON results from logs
-            # Debug: log the raw logs
-            logger.info(f"Task {task_id}: Raw logs type={type(logs)}, repr={repr(logs[:500])}")
+            # Fix: K8s Python client sometimes returns string with Python dict syntax
+            # instead of proper JSON (single quotes, capitalized True/False/None)
             try:
                 result_data = json.loads(logs.strip())
-                if "error" in result_data:
+            except json.JSONDecodeError as e:
+                # Try parsing as Python literal and convert to JSON
+                try:
+                    result_dict = ast.literal_eval(logs.strip())
+                    result_data = json.loads(json.dumps(result_dict))
+                except Exception:
+                    # ast parsing also failed - return error with original JSON exception
+                    raw_preview = logs[:1000] if logs else "(empty)"
                     return ExecutionResult(
                         task_id=task_id,
                         succeeded=False,
                         timed_out=False,
                         outputs=[],
-                        error=result_data["error"],
+                        error=f"Failed to parse execution output: {e}. Raw output: {raw_preview}",
                     )
 
-                test_results = result_data.get("results", [])
-                return ExecutionResult(
-                    task_id=task_id,
-                    succeeded=succeeded,
-                    timed_out=False,
-                    outputs=test_results,
-                )
-
-            except json.JSONDecodeError as e:
-                # Include first 1000 chars of raw output in error for debugging
-                raw_preview = logs[:1000] if logs else "(empty)"
+            # Successfully parsed result_data
+            if "error" in result_data:
                 return ExecutionResult(
                     task_id=task_id,
                     succeeded=False,
                     timed_out=False,
                     outputs=[],
-                    error=f"Failed to parse execution output: {e}. Raw output: {raw_preview}",
+                    error=result_data["error"],
                 )
+
+            test_results = result_data.get("results", [])
+            return ExecutionResult(
+                task_id=task_id,
+                succeeded=succeeded,
+                timed_out=False,
+                outputs=test_results,
+            )
 
         except Exception as e:
             logger.error(f"Error executing task {task_id}: {e}")
@@ -476,7 +480,5 @@ class CodeExecutor:
             )
 
         finally:
-            # Temporarily skip deletion for debugging
-            pass
-            # if job_name:
-            #     self.delete_job(job_name)
+            if job_name:
+                self.delete_job(job_name)
