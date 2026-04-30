@@ -1,0 +1,43 @@
+---
+# ImageStream for ODEX test executor image
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: odex-executor
+  labels:
+    app: odex-eval
+---
+# BuildConfig for ODEX test executor image
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: odex-executor
+  labels:
+    app: odex-eval
+spec:
+  source:
+    type: Git
+    git:
+      uri: https://github.com/ilya-kolchinsky/code-agent.git
+      ref: odex-benchmark
+    contextDir: .
+
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: infra/images/Containerfile.odex-executor
+
+  output:
+    to:
+      kind: ImageStreamTag
+      name: odex-executor:latest
+
+  resources:
+    limits:
+      cpu: "2"
+      memory: "4Gi"
+    requests:
+      cpu: "1"
+      memory: "2Gi"
+
+  triggers: []

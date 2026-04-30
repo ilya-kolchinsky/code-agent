@@ -1,0 +1,17 @@
+# ODEX test executor image
+# Extends python:3.11-slim with common libraries needed for ODEX tasks
+
+FROM python:3.11-slim
+
+# Install common packages used by ODEX test cases
+RUN pip install --no-cache-dir \
+    numpy \
+    pandas \
+    requests \
+    mock
+
+# Set working directory to /tmp for file write permissions
+WORKDIR /tmp
+
+# Default user (will be overridden by OpenShift to use random UID)
+USER 1001
