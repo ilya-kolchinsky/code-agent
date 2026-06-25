@@ -1,9 +1,13 @@
 """OpenRLHF AgentInstanceBase implementation for SWE-bench.
 
-Connects OpenRLHF's multi-turn agent loop to the K8s Pod execution
-environment.  Each instance manages one agent episode: reset() creates
-a sandbox Pod, step() executes tool calls, and the final step runs
-the SWE-bench eval to produce a binary reward.
+Connects OpenRLHF's multi-turn agent loop to an execution environment.
+Each instance manages one agent episode: reset() creates a sandbox,
+step() executes tool calls, and the final step runs the SWE-bench
+eval to produce a binary reward.
+
+The execution backend is selected via the ``SWE_ENVIRONMENT`` env var:
+  - ``k8s`` (default): K8s Pod sandbox via ``SWEBenchEnvironment``
+  - ``local``: Sandlock-based local sandbox via ``LocalSWEBenchEnvironment``
 """
 
 from __future__ import annotations
@@ -16,11 +20,9 @@ import torch
 from openrlhf.utils.agent import AgentInstanceBase
 
 try:
-    from training.swe_bench.environment import SWEBenchEnvironment
     from training.swe_bench.system_prompt import build_system_prompt
     from training.swe_bench.tool_parser import parse_tool_call
 except ImportError:
-    from environment import SWEBenchEnvironment
     from system_prompt import build_system_prompt
     from tool_parser import parse_tool_call
 
@@ -30,6 +32,7 @@ class InfrastructureError(RuntimeError):
     """Raised when a rollout fails due to infrastructure, not model quality."""
 
 
+_ENVIRONMENT = os.environ.get("SWE_ENVIRONMENT", "k8s")
 _MAX_STEPS = int(os.environ.get("SWE_MAX_STEPS", "100"))
 _MAX_OUTPUT_CHARS = int(os.environ.get("SWE_MAX_OUTPUT_CHARS", "8000"))
 _IMAGE_REGISTRY = os.environ.get("SWE_IMAGE_REGISTRY", "")
@@ -52,15 +55,32 @@ def _format_tool_output(stdout: str, exit_code: int) -> str:
     return "\n".join(parts)
 
 
+def _create_environment():
+    if _ENVIRONMENT == "local":
+        try:
+            from training.swe_bench.cloudexe.local_environment import LocalSWEBenchEnvironment
+        except ImportError:
+            from cloudexe.local_environment import LocalSWEBenchEnvironment
+        return LocalSWEBenchEnvironment(
+            env_map_path=os.environ.get("SWE_ENV_MAP", "/root/swe-env-map.json"),
+            repo_cache_dir=os.environ.get("SWE_REPO_CACHE", "/root/repo-cache"),
+        )
+    try:
+        from training.swe_bench.environment import SWEBenchEnvironment
+    except ImportError:
+        from environment import SWEBenchEnvironment
+    return SWEBenchEnvironment(
+        image_registry=_IMAGE_REGISTRY,
+        namespace=_K8S_NAMESPACE or None,
+        service_account=_SERVICE_ACCOUNT,
+    )
+
+
 class SWEBenchAgentInstance(AgentInstanceBase):
     """One agent episode on a SWE-bench instance."""
 
     def __init__(self):
-        self.env = SWEBenchEnvironment(
-            image_registry=_IMAGE_REGISTRY,
-            namespace=_K8S_NAMESPACE or None,
-            service_account=_SERVICE_ACCOUNT,
-        )
+        self.env = _create_environment()
         self.step_count = 0
         self.max_steps = _MAX_STEPS
         self.instance_id = ""
