@@ -46,6 +46,10 @@ SPLIT = "test"
 DEFAULT_REPO_CACHE = "/root/repo-cache"
 DEFAULT_ENV_MAP = "/root/swe-env-map.json"
 DEFAULT_MINICONDA = "/opt/miniconda3"
+CONDA_BIN = os.environ.get(
+    "CONDA_EXE",
+    os.path.join(os.environ.get("CONDA_PREFIX", "/opt/miniconda"), "bin", "conda"),
+)
 
 SYSTEM_PACKAGES = [
     "locales",
@@ -125,7 +129,7 @@ def build_conda_envs(
         if key in existing_map:
             env_name = existing_map[key]
             result = subprocess.run(
-                ["conda", "info", "--envs"],
+                [CONDA_BIN, "info", "--envs"],
                 capture_output=True, text=True,
             )
             if env_name in result.stdout:
@@ -272,7 +276,7 @@ def smoke_test(env_map_path: str, repo_cache_dir: str) -> bool:
 
     # Test conda env exists
     result = subprocess.run(
-        ["conda", "run", "-n", env_name, "python", "--version"],
+        [CONDA_BIN, "run", "-n", env_name, "python", "--version"],
         capture_output=True, text=True, timeout=30,
     )
     if result.returncode != 0:

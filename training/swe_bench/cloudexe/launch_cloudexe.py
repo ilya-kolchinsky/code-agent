@@ -4,13 +4,13 @@ Starts a local Ray cluster and submits the OpenRLHF GRPO training job
 configured for single-node 8×H100 with colocated rollout/training.
 
 Usage (from the Cloudexe base instance):
-    cloudexe --gpuspec H100x8 -- /usr/bin/python3 \\
+    cloudexe --gpuspec H100x8 -- /opt/miniconda/envs/agent/bin/python \\
         /root/code-agent/training/swe_bench/cloudexe/launch_cloudexe.py
 
-    # Quick test with 4 instances
-    cloudexe --gpuspec H100x8 -- /usr/bin/python3 \\
+    # Quick test with 2 instances
+    cloudexe --gpuspec H100x8 -- /opt/miniconda/envs/agent/bin/python \\
         /root/code-agent/training/swe_bench/cloudexe/launch_cloudexe.py \\
-        --max-samples 4
+        --max-samples 2
 
 All training hyperparameters match train_swe_bench_grpo.sh; only
 infrastructure flags change (single-node, local Ray, local sandbox).
@@ -88,12 +88,17 @@ def parse_args():
 
 
 def setup_environment(args):
+    conda_env_bin = os.path.join(sys.prefix, "bin")
+    os.environ["PATH"] = conda_env_bin + ":" + os.environ.get("PATH", "")
+
     os.environ["HF_HOME"] = "/huggingface-public"
     os.environ["RAY_TMPDIR"] = "/tmp/ray"
     os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
     os.environ["TRITON_CACHE_DIR"] = "/tmp/.triton"
     os.environ["XDG_CACHE_HOME"] = "/tmp/.cache"
     os.environ["NVTX_DISABLE"] = "1"
+    os.environ["CUDA_HOME"] = "/usr/local/cuda"
+    os.environ["DS_BUILD_OPS"] = "0"
 
     os.environ["SWE_ENVIRONMENT"] = "local"
     os.environ["SWE_ENV_MAP"] = args.env_map
@@ -128,6 +133,10 @@ def run_training(args):
         "SWE_REPO_CACHE": args.repo_cache,
         "SWE_MAX_STEPS": str(args.max_steps),
         "SWE_MAX_ROLLOUT_RETRIES": str(args.max_rollout_retries),
+        "CUDA_HOME": "/usr/local/cuda",
+        "DS_BUILD_OPS": "0",
+        "VLLM_ATTENTION_BACKEND": "FLASH_ATTN",
+        "FLASHINFER_ENABLE_AOT": "0",
     }
     env_vars_json = ",".join(
         f'"{k}": "{v}"' for k, v in env_vars.items()

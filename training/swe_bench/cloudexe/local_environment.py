@@ -9,7 +9,7 @@ local execution model.  Each agent episode gets:
 
 Prerequisites:
   - Pre-built conda envs and repo cache via ``setup_local_envs.py``
-  - Sandlock binary installed at /usr/local/bin/sandlock
+  - ``pip install sandlock`` (Python SDK)
   - Symlink /opt/miniconda3 -> /opt/miniconda (Cloudexe uses /opt/miniconda)
 
 Lifecycle (same interface as SWEBenchEnvironment):
@@ -43,9 +43,9 @@ logger = logging.getLogger(__name__)
 
 _EXEC_TIMEOUT = int(os.environ.get("SWE_EXEC_TIMEOUT", "120"))
 _EVAL_TIMEOUT = int(os.environ.get("SWE_EVAL_TIMEOUT", "600"))
-_SANDLOCK_BIN = os.environ.get("SWE_SANDLOCK_BIN", "/usr/local/bin/sandlock")
 _SANDLOCK_MEMORY = os.environ.get("SWE_SANDLOCK_MEMORY", "4G")
 _MINICONDA_PATH = os.environ.get("SWE_MINICONDA_PATH", "/opt/miniconda3")
+_CONDA_BIN = os.path.join(_MINICONDA_PATH, "bin", "conda")
 
 _RC_PATTERN = re.compile(r"__RC_8372916__:(\d+)\n?")
 
@@ -63,6 +63,12 @@ _SANDLOCK_READABLE_PATHS = [
     "/sbin",
     "/etc",
 ]
+
+try:
+    from sandlock import Sandbox as _Sandbox
+    _HAS_SANDLOCK = True
+except ImportError:
+    _HAS_SANDLOCK = False
 
 
 def _extract_install_commands(repo_script_list: list[str]) -> list[str]:
@@ -169,7 +175,7 @@ class LocalSWEBenchEnvironment:
 
         result = subprocess.run(
             [
-                "conda", "create", "--clone", base_env_name,
+                _CONDA_BIN, "create", "--clone", base_env_name,
                 "-n", self._episode_env_name, "-y", "-q",
             ],
             capture_output=True, text=True, timeout=300,
@@ -180,7 +186,7 @@ class LocalSWEBenchEnvironment:
             )
 
         envs_output = subprocess.run(
-            ["conda", "info", "--envs"], capture_output=True, text=True
+            [_CONDA_BIN, "info", "--envs"], capture_output=True, text=True
         )
         for line in envs_output.stdout.splitlines():
             if self._episode_env_name in line:
@@ -238,6 +244,28 @@ class LocalSWEBenchEnvironment:
             cwd=str(testbed), capture_output=True, text=True,
         )
 
+    def _build_sandbox(self) -> "_Sandbox | None":
+        """Build a Sandlock Sandbox configured for this episode, or None."""
+        if not _HAS_SANDLOCK:
+            logger.warning("sandlock package not installed — running without sandbox")
+            return None
+
+        readable = [p for p in _SANDLOCK_READABLE_PATHS if os.path.exists(p)]
+        if os.path.exists(_MINICONDA_PATH):
+            readable.append(_MINICONDA_PATH)
+        if self._repo_cache_dir.exists():
+            readable.append(str(self._repo_cache_dir))
+
+        writable = [DOCKER_WORKDIR, "/tmp"]
+        if self._episode_env_dir:
+            writable.append(self._episode_env_dir)
+
+        return _Sandbox(
+            fs_readable=readable,
+            fs_writable=writable,
+            max_memory=_SANDLOCK_MEMORY,
+        )
+
     async def _run_in_env(
         self,
         command: str,
@@ -254,52 +282,33 @@ class LocalSWEBenchEnvironment:
             f"source {_MINICONDA_PATH}/bin/activate {self._episode_env_name}"
         )
         wrapped = f'{activate} && cd {DOCKER_WORKDIR} && ({command}); echo "{sentinel}:$?"'
-
-        if sandbox and shutil.which(_SANDLOCK_BIN):
-            readable_args = []
-            for path in _SANDLOCK_READABLE_PATHS:
-                if os.path.exists(path):
-                    readable_args.extend(["-r", path])
-            if os.path.exists(_MINICONDA_PATH):
-                readable_args.extend(["-r", _MINICONDA_PATH])
-            if self._repo_cache_dir.exists():
-                readable_args.extend(["-r", str(self._repo_cache_dir)])
-
-            writable_args = ["-w", DOCKER_WORKDIR, "-w", "/tmp"]
-            if self._episode_env_dir:
-                writable_args.extend(["-w", self._episode_env_dir])
-
-            cmd_list = [
-                _SANDLOCK_BIN, "run",
-                "--timeout", str(timeout),
-                "-m", _SANDLOCK_MEMORY,
-                *readable_args,
-                *writable_args,
-                "--", "/bin/bash", "-c", wrapped,
-            ]
-        else:
-            if sandbox:
-                logger.warning(
-                    "Sandlock not found at %s — running without sandbox",
-                    _SANDLOCK_BIN,
-                )
-            cmd_list = ["/bin/bash", "-c", wrapped]
+        cmd_list = ["/bin/bash", "-c", wrapped]
 
         loop = asyncio.get_event_loop()
-        try:
-            proc = await loop.run_in_executor(
-                None,
-                partial(
-                    _run_subprocess,
-                    cmd_list,
-                    timeout=timeout + 30,
-                ),
-            )
-            raw_output = proc.stdout or ""
-            if proc.stderr:
-                raw_output = raw_output + "\n" + proc.stderr
-        except TimeoutExpired:
-            return f"Command timed out after {timeout}s", -1
+
+        sb = self._build_sandbox() if sandbox else None
+        if sb is not None:
+            try:
+                result = await loop.run_in_executor(
+                    None, partial(sb.run, cmd_list, timeout=timeout),
+                )
+                raw_output = result.stdout.decode("utf-8", errors="replace")
+                if result.stderr:
+                    raw_output += "\n" + result.stderr.decode("utf-8", errors="replace")
+            except Exception as e:
+                if "timeout" in str(e).lower():
+                    return f"Command timed out after {timeout}s", -1
+                raise
+        else:
+            try:
+                proc = await loop.run_in_executor(
+                    None, partial(_run_subprocess, cmd_list, timeout=timeout + 30),
+                )
+                raw_output = proc.stdout or ""
+                if proc.stderr:
+                    raw_output += "\n" + proc.stderr
+            except TimeoutExpired:
+                return f"Command timed out after {timeout}s", -1
 
         rc_match = _RC_PATTERN.search(raw_output)
         if rc_match:
@@ -421,6 +430,6 @@ def _remove_conda_env(env_name: str) -> None:
     import subprocess
 
     subprocess.run(
-        ["conda", "remove", "-n", env_name, "--all", "-y", "-q"],
+        [_CONDA_BIN, "remove", "-n", env_name, "--all", "-y", "-q"],
         capture_output=True, text=True, timeout=120,
     )
