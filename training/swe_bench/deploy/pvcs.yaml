@@ -1,0 +1,28 @@
+# PersistentVolumeClaims for SWE-bench RL training.
+#
+# hf-cache-0:            HuggingFace model weights cache (shared across runs)
+# training-checkpoints:  DeepSpeed/HF checkpoint storage (mounted on rank-0 worker)
+#
+# Usage:
+#   kubectl apply -f training/swe_bench/deploy/pvcs.yaml
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: hf-cache-0
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 50Gi
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: training-checkpoints
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 30Gi
