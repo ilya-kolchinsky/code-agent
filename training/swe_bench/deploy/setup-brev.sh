@@ -59,12 +59,17 @@ if [ ! -d /ephemeral ]; then
     exit 1
 fi
 
-if [ ! -L /var/lib/docker ] && [ -d /var/lib/docker ]; then
-    echo "WARNING: /var/lib/docker is not a symlink to /ephemeral."
-    echo "         Run:  sudo bash training/swe_bench/deploy/setup-brev-storage.sh"
-    echo "         Then re-run this script."
-    exit 1
-fi
+for storage_path in \
+    /var/lib/docker \
+    /var/lib/containerd \
+    /var/snap/microk8s/common/var/lib/containerd
+do
+    if [ ! -L "$storage_path" ] && [ -d "$storage_path" ]; then
+        echo "ERROR: $storage_path is not relocated to /ephemeral." >&2
+        echo "       Run: sudo bash training/swe_bench/deploy/setup-brev-storage.sh" >&2
+        exit 1
+    fi
+done
 
 echo "  Prerequisites OK."
 
@@ -84,8 +89,11 @@ done
 # ═══════════════════════════════════════════════════════════════
 
 echo "=== 2/10  Setting up local Docker registry ==="
-if docker ps --format '{{.Names}}' | grep -q '^registry$'; then
+if docker ps --format '{{.Names}}' | grep -qx 'registry'; then
     echo "  Registry container already running."
+elif docker ps -a --format '{{.Names}}' | grep -qx 'registry'; then
+    echo "  Starting existing registry container."
+    docker start registry
 else
     echo "  Starting registry on ${REGISTRY} (data: /ephemeral/registry)..."
     docker run -d \
@@ -201,6 +209,7 @@ else
     fi
 
     echo "  Running build_dataset.py via K8s Job (model: ${MODEL_PATH})..."
+    kubectl delete job build-swe-dataset --ignore-not-found --wait=true
     cat <<JOB_YAML | kubectl apply -f -
 apiVersion: batch/v1
 kind: Job

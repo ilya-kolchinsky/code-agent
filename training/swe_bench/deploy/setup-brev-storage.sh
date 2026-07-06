@@ -34,8 +34,21 @@ relocate() {
     local label="$3"
 
     if [ -L "$src" ]; then
-        echo "$label: $src is already a symlink, skipping."
+        local target
+        target="$(readlink -f "$src")"
+        local expected
+        expected="$(readlink -m "$dst")"
+        if [ "$target" != "$expected" ]; then
+            echo "ERROR: $label symlink $src points to $target, expected $dst" >&2
+            exit 1
+        fi
+        echo "$label: $src already points to $dst, skipping."
         return
+    fi
+
+    if [ -e "$dst" ]; then
+        echo "ERROR: $label destination $dst already exists; refusing to nest $src under it." >&2
+        exit 1
     fi
 
     echo "$label: moving $src → $dst ..."
@@ -66,11 +79,11 @@ echo "=== Starting Docker ==="
 systemctl start containerd docker
 
 echo "=== Starting microk8s ==="
-microk8s start 2>/dev/null || snap start microk8s 2>/dev/null || true
+microk8s start 2>/dev/null || snap start microk8s
 
 echo "=== Waiting for microk8s to be ready ==="
 microk8s status --wait-ready --timeout 120 2>/dev/null || \
-    kubectl wait --for=condition=Ready node --all --timeout=120s 2>/dev/null || true
+    kubectl wait --for=condition=Ready node --all --timeout=120s
 
 echo ""
 echo "Storage relocated. Disk usage:"
