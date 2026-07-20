@@ -1,0 +1,85 @@
+# Eval runner pod with PVC-backed data directory.
+#
+# All eval artifacts (datasets, output JSONL files, patched code, forks)
+# live on the PVC at /data.  If the pod is evicted or deleted, recreate
+# it and everything resumes — no re-copying patches.
+#
+# Prerequisites:
+#   oc apply -f training/swe_bench/deploy/rbac-training.yaml  # sandbox pod perms
+#
+# Deploy:
+#   oc apply -f evals/swe_bench/deploy/eval-runner.yaml
+#
+# First-time setup (copies code to PVC — idempotent, re-run after code changes):
+#   bash evals/swe_bench/deploy/setup-eval-runner.sh
+#
+# Copy a dataset to the pod:
+#   oc cp /tmp/my_dataset.jsonl eval-agent-runner:/data/my_dataset.jsonl
+#
+# Run eval (adjust dataset, output, and parameters per experiment):
+#   oc exec eval-agent-runner -- bash -c '
+#     python3 -u -m evals.swe_bench.eval_agent \
+#       --dataset-path /data/my_dataset.jsonl \
+#       --output-path /data/my_results.jsonl \
+#       --vllm-url http://vllm-server:8000/v1 \
+#       --model-name Qwen/Qwen3.5-9B \
+#       ...
+#   '
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: eval-runner-data
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 10Gi
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: eval-agent-runner
+  labels:
+    app: swe-bench-eval-runner
+spec:
+  serviceAccountName: swe-bench-training
+  restartPolicy: Never
+  securityContext:
+    fsGroup: 0
+  # Pin to the GPU node — sandbox pods have anti-affinity on GPU nodes,
+  # so this pod won't compete with them for disk and won't get evicted
+  # by their image pulls.
+  nodeSelector:
+    gpu-pool-size: xlarge
+  containers:
+    - name: runner
+      image: image-registry.openshift-image-registry.svc:5000/code-agent/ray-swe-rl:latest
+      command: ["sleep", "infinity"]
+      securityContext:
+        allowPrivilegeEscalation: false
+      env:
+        - name: HOME
+          value: "/data"
+        - name: HF_HOME
+          value: "/data/hf_cache"
+        - name: PYTHONPATH
+          value: "/data/swe-gym-fork:/data/code-agent-patch"
+        - name: SWE_POD_READY_TIMEOUT
+          value: "1200"
+      resources:
+        requests:
+          cpu: "2"
+          memory: "4Gi"
+        limits:
+          cpu: "4"
+          memory: "8Gi"
+      volumeMounts:
+        - name: data
+          mountPath: /data
+  volumes:
+    - name: data
+      persistentVolumeClaim:
+        claimName: eval-runner-data

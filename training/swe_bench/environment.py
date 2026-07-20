@@ -36,7 +36,7 @@ from evals.swe_bench.grader import grade_instance
 logger = logging.getLogger(__name__)
 
 _POLL_INTERVAL = 2
-_POD_READY_TIMEOUT = int(os.environ.get("SWE_POD_READY_TIMEOUT", "120"))
+_POD_READY_TIMEOUT = int(os.environ.get("SWE_POD_READY_TIMEOUT", "300"))
 _EXEC_TIMEOUT = int(os.environ.get("SWE_EXEC_TIMEOUT", "120"))
 
 _RC_PATTERN = re.compile(r"__RC_8372916__:(\d+)\n?")
@@ -102,26 +102,6 @@ class SWEBenchEnvironment:
         name = _pod_name(self._instance_id)
         self._pod_name = name
 
-        init_container = k8s_client.V1Container(
-            name="fix-permissions",
-            image=info.image,
-            image_pull_policy="IfNotPresent",
-            command=[
-                "/bin/sh", "-c",
-                f"chown -R 1001:0 {DOCKER_WORKDIR} && "
-                f"chmod -R a+rwX {DOCKER_WORKDIR} && "
-                "chown -R 1001:0 /opt/miniconda3 2>/dev/null || true && "
-                "chmod -R a+rwX /opt/miniconda3 2>/dev/null || true",
-            ],
-            security_context=k8s_client.V1SecurityContext(
-                allow_privilege_escalation=False,
-                run_as_user=0,
-                run_as_non_root=False,
-                capabilities=k8s_client.V1Capabilities(drop=["ALL"]),
-                privileged=False,
-            ),
-        )
-
         container = k8s_client.V1Container(
             name="sandbox",
             image=info.image,
@@ -130,13 +110,12 @@ class SWEBenchEnvironment:
             working_dir=DOCKER_WORKDIR,
             security_context=k8s_client.V1SecurityContext(
                 allow_privilege_escalation=False,
-                run_as_non_root=True,
-                run_as_user=1001,
-                capabilities=k8s_client.V1Capabilities(drop=["ALL"]),
+                run_as_user=0,
+                run_as_non_root=False,
             ),
             resources=k8s_client.V1ResourceRequirements(
                 requests={"cpu": "1", "memory": "2Gi"},
-                limits={"cpu": "2", "memory": "4Gi", "ephemeral-storage": "4Gi"},
+                limits={"cpu": "2", "memory": "4Gi", "ephemeral-storage": "8Gi"},
             ),
         )
 
@@ -152,15 +131,25 @@ class SWEBenchEnvironment:
                 },
             ),
             spec=k8s_client.V1PodSpec(
-                init_containers=[init_container],
                 containers=[container],
                 restart_policy="Never",
                 service_account_name=self._service_account,
                 automount_service_account_token=False,
-                security_context=k8s_client.V1PodSecurityContext(
-                    run_as_non_root=True,
-                    fs_group=0,
-                    supplemental_groups=[0],
+                affinity=k8s_client.V1Affinity(
+                    node_affinity=k8s_client.V1NodeAffinity(
+                        required_during_scheduling_ignored_during_execution=k8s_client.V1NodeSelector(
+                            node_selector_terms=[
+                                k8s_client.V1NodeSelectorTerm(
+                                    match_expressions=[
+                                        k8s_client.V1NodeSelectorRequirement(
+                                            key="nvidia.com/gpu.present",
+                                            operator="DoesNotExist",
+                                        )
+                                    ]
+                                )
+                            ]
+                        )
+                    )
                 ),
             ),
         )
@@ -214,11 +203,17 @@ class SWEBenchEnvironment:
     ) -> tuple[str, int]:
         """Execute a bash command in the Pod.
 
+        Each command is wrapped with conda activation and environment
+        setup so the testbed Python environment is always available.
         Returns (combined_output, exit_code).
         """
         sentinel = "__RC_8372916__"
-        # Subshell so `exit N` doesn't kill the outer shell before the sentinel.
-        wrapped = f'({command}); echo "{sentinel}:$?"'
+        preamble = (
+            "export PAGER=cat MANPAGER=cat; "
+            "source activate testbed 2>/dev/null; "
+            f"cd {DOCKER_WORKDIR}; "
+        )
+        wrapped = f'{preamble}({command}); echo "{sentinel}:$?"'
 
         loop = asyncio.get_event_loop()
         raw_output: str = await loop.run_in_executor(

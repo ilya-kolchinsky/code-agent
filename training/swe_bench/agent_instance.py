@@ -17,12 +17,14 @@ from openrlhf.utils.agent import AgentInstanceBase
 
 try:
     from training.swe_bench.environment import SWEBenchEnvironment
+    from training.swe_bench.observation import format_observation
     from training.swe_bench.system_prompt import build_system_prompt
-    from training.swe_bench.tool_parser import parse_tool_call
+    from training.swe_bench.tool_parser import check_submission_sentinel, parse_tool_call
 except ImportError:
     from environment import SWEBenchEnvironment
+    from observation import format_observation
     from system_prompt import build_system_prompt
-    from tool_parser import parse_tool_call
+    from tool_parser import check_submission_sentinel, parse_tool_call
 
 logger = logging.getLogger(__name__)
 
@@ -35,21 +37,6 @@ _MAX_OUTPUT_CHARS = int(os.environ.get("SWE_MAX_OUTPUT_CHARS", "8000"))
 _IMAGE_REGISTRY = os.environ.get("SWE_IMAGE_REGISTRY", "")
 _K8S_NAMESPACE = os.environ.get("SWE_K8S_NAMESPACE", "")
 _SERVICE_ACCOUNT = os.environ.get("SWE_SERVICE_ACCOUNT", "swe-bench-training")
-
-
-def _truncate(text: str, limit: int = _MAX_OUTPUT_CHARS) -> str:
-    if len(text) <= limit:
-        return text
-    half = limit // 2
-    return text[:half] + f"\n... ({len(text) - limit} chars truncated) ...\n" + text[-half:]
-
-
-def _format_tool_output(stdout: str, exit_code: int) -> str:
-    truncated = _truncate(stdout)
-    parts = [truncated]
-    if exit_code != 0:
-        parts.append(f"[exit code: {exit_code}]")
-    return "\n".join(parts)
 
 
 class SWEBenchAgentInstance(AgentInstanceBase):
@@ -126,7 +113,11 @@ class SWEBenchAgentInstance(AgentInstanceBase):
         if exit_code != 0:
             self._nonzero_exits += 1
 
-        feedback = _format_tool_output(stdout, exit_code)
+        patch = check_submission_sentinel(stdout)
+        if patch is not None:
+            return await self._handle_submit()
+
+        feedback = format_observation(stdout, exit_code, _MAX_OUTPUT_CHARS)
 
         return {
             "rewards": torch.tensor(0.0),

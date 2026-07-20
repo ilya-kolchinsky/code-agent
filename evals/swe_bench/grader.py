@@ -8,6 +8,8 @@ needed internally by swebench's get_eval_report).
 Adapted from https://github.com/MichaelClifford/swe-bench-on-kfp
 """
 
+import inspect
+import shutil
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -15,6 +17,12 @@ from typing import Any
 
 from swebench.harness.grading import get_eval_report
 from swebench.harness.test_spec.test_spec import TestSpec
+
+_LOG_PATH_KWARG = (
+    "log_path"
+    if "log_path" in inspect.signature(get_eval_report).parameters
+    else "test_log_path"
+)
 
 from evals.common.grader import BaseAggregateReport
 
@@ -66,21 +74,22 @@ def grade_instance(
         InstanceResult with grading details.
     """
     instance_id = prediction["instance_id"]
-    temp_path = None
+    temp_dir = None
 
     try:
-        # get_eval_report requires a file path, so write to a temp file
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".txt", delete=False
-        ) as f:
-            f.write(test_output)
-            temp_path = f.name
+        # get_eval_report's get_logs_eval() derives the repo from the log
+        # path: Path(fp).parent.stem → repo.  Lowercase so the derived repo
+        # matches the lowercase keys in MAP_REPO_TO_PARSER.
+        temp_dir = Path(tempfile.mkdtemp()) / instance_id.lower()
+        temp_dir.mkdir()
+        temp_path = str(temp_dir / "test_output.txt")
+        Path(temp_path).write_text(test_output)
 
         report = get_eval_report(
             test_spec=test_spec,
             prediction=prediction,
-            test_log_path=temp_path,
             include_tests_status=True,
+            **{_LOG_PATH_KWARG: temp_path},
         )
 
         instance_report = report[instance_id]
@@ -102,8 +111,8 @@ def grade_instance(
             error=str(e),
         )
     finally:
-        if temp_path is not None:
-            Path(temp_path).unlink(missing_ok=True)
+        if temp_dir is not None:
+            shutil.rmtree(temp_dir.parent, ignore_errors=True)
 
 
 def aggregate_reports(results: list[InstanceResult]) -> AggregateReport:
