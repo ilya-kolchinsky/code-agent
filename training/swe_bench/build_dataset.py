@@ -63,7 +63,7 @@ def build(
 
     output.parent.mkdir(parents=True, exist_ok=True)
 
-    with open(output, "w") as f:
+    with open(output, "w", encoding="utf-8") as f:
         for row in ds:
             # Format as a chat message for the model
             messages = [{"role": "user", "content": row["problem_statement"]}]

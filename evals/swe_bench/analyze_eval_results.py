@@ -81,15 +81,19 @@ def load_results(path: Path) -> list[dict]:
     return results
 
 
+def _record_run(stats: RunStats, run: dict) -> None:
+    stats.resolved.append(run["resolved"])
+    stats.steps.append(run["steps"])
+    stats.tokens.append(run["total_tokens"])
+    stats.wall_clock.append(run["wall_clock_seconds"])
+    stats.reasons[run.get("reason", "unknown")] += 1
+
+
 def collect_stats(results: list[dict]) -> RunStats:
     stats = RunStats()
     for r in results:
         for run in r["runs"]:
-            stats.resolved.append(run["resolved"])
-            stats.steps.append(run["steps"])
-            stats.tokens.append(run["total_tokens"])
-            stats.wall_clock.append(run["wall_clock_seconds"])
-            stats.reasons[run.get("reason", "unknown")] += 1
+            _record_run(stats, run)
     return stats
 
 
@@ -98,12 +102,7 @@ def collect_per_repo(results: list[dict]) -> dict[str, RunStats]:
     for r in results:
         repo = r.get("repo", "unknown")
         for run in r["runs"]:
-            s = repos[repo]
-            s.resolved.append(run["resolved"])
-            s.steps.append(run["steps"])
-            s.tokens.append(run["total_tokens"])
-            s.wall_clock.append(run["wall_clock_seconds"])
-            s.reasons[run.get("reason", "unknown")] += 1
+            _record_run(repos[repo], run)
     return dict(repos)
 
 
@@ -149,7 +148,7 @@ def grpo_analysis(results: list[dict]) -> str:
 
     if mixed_details:
         lines.append("Mixed outcome breakdown:")
-        for key in sorted(mixed_details.keys()):
+        for key in sorted(mixed_details.keys(), key=lambda k: int(k.split("/")[0])):
             lines.append(f"  {key}: {mixed_details[key]} instances")
         lines.append("")
 
@@ -223,18 +222,13 @@ def format_report(
         lines.append(f"  {reason:15s}  {count:4d}  ({count/total_runs:.1%})")
     lines.append("")
 
-    non_error_tokens = [
-        t for t, r in zip(overall.tokens, overall.resolved)
-        if t > 0  # skip error runs with 0 tokens
+    non_error_runs = [
+        run for r in results for run in r["runs"]
+        if run.get("reason") != "error"
     ]
-    non_error_steps = [
-        s for s, t in zip(overall.steps, overall.tokens)
-        if t > 0
-    ]
-    non_error_wall = [
-        w for w, t in zip(overall.wall_clock, overall.tokens)
-        if t > 0
-    ]
+    non_error_tokens = [run["total_tokens"] for run in non_error_runs]
+    non_error_steps = [run["steps"] for run in non_error_runs]
+    non_error_wall = [run["wall_clock_seconds"] for run in non_error_runs]
 
     lines.append("--- Token Usage (excluding error runs) ---")
     lines.append(f"  {_stats_line([float(t) for t in non_error_tokens])}")
@@ -265,12 +259,12 @@ def format_report(
     unresolved_tokens = [
         run["total_tokens"]
         for r in results for run in r["runs"]
-        if not run["resolved"] and run["total_tokens"] > 0
+        if not run["resolved"] and run.get("reason") != "error"
     ]
     unresolved_steps = [
         run["steps"]
         for r in results for run in r["runs"]
-        if not run["resolved"] and run["total_tokens"] > 0
+        if not run["resolved"] and run.get("reason") != "error"
     ]
     if unresolved_tokens:
         lines.append("--- Unresolved Episodes Only (excluding errors) ---")
@@ -284,9 +278,13 @@ def format_report(
         f"{'AvgSteps':>8s} {'AvgTokens':>9s}"
     )
     lines.append("-" * 85)
+    repo_instance_counts = defaultdict(int)
+    for r in results:
+        repo_instance_counts[r.get("repo", "unknown")] += 1
+
     for repo in sorted(per_repo.keys()):
         s = per_repo[repo]
-        n_instances = len(s.resolved) // (total_runs // total_instances) if total_instances else 0
+        n_instances = repo_instance_counts[repo]
         n_resolved = sum(1 for r in s.resolved if r)
         n_runs = len(s.resolved)
         avg_steps = sum(s.steps) / n_runs if n_runs else 0

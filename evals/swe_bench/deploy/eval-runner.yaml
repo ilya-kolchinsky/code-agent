@@ -58,6 +58,8 @@ spec:
     - name: runner
       image: image-registry.openshift-image-registry.svc:5000/code-agent/ray-swe-rl:latest
       command: ["sleep", "infinity"]
+      securityContext:
+        allowPrivilegeEscalation: false
       env:
         - name: HOME
           value: "/data"

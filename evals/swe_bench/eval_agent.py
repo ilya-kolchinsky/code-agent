@@ -193,6 +193,7 @@ async def _run_episode(
                 messages=messages,
                 max_tokens=min(4096, remaining),
                 temperature=config.temperature,
+                seed=config.seed,
                 extra_body={
                     "chat_template_kwargs": {"enable_thinking": False},
                 },
@@ -266,7 +267,7 @@ async def _run_episode(
         resolved, _ = await env.run_eval()
         return EpisodeResult(
             resolved=resolved,
-            steps=0,
+            steps=steps_completed,
             total_tokens=total_tokens,
             reason="max_steps",
             wall_clock_seconds=time.monotonic() - t0,
