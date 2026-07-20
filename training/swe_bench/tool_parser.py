@@ -2,7 +2,12 @@
 
 Defines a simple tag-based protocol for the agent:
   <bash>command here</bash>     -- execute a bash command
-  <submit/>                     -- submit the current patch
+  <submit/>                     -- submit the current patch (legacy fallback)
+
+The primary submission mechanism is sentinel-based: the model echoes
+``COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT`` followed by the patch content
+in its bash output, and the caller detects it via
+:func:`check_submission_sentinel`.
 
 If no tags are found, the entire output is treated as a bash command
 (graceful fallback for early training when the model hasn't learned
@@ -17,6 +22,8 @@ from typing import Literal
 
 _BASH_PATTERN = re.compile(r"<bash>(.*?)</bash>", re.DOTALL)
 _SUBMIT_PATTERN = re.compile(r"<submit\s*/>")
+
+_SENTINEL = "COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT"
 
 
 @dataclass
@@ -51,3 +58,16 @@ def parse_tool_call(text: str) -> ToolCall:
         return ToolCall(type="bash", content=stripped)
 
     return ToolCall(type="submit")
+
+
+def check_submission_sentinel(output: str) -> str | None:
+    """Check bash output for the submission sentinel.
+
+    Returns the patch content (everything after the sentinel line)
+    if found, or ``None`` otherwise.
+    """
+    idx = output.find(_SENTINEL)
+    if idx == -1:
+        return None
+    after = output[idx + len(_SENTINEL):]
+    return after.strip()
